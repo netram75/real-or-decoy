@@ -1,6 +1,7 @@
 # reference solution
 # 1. grab every number-like chunk (6+ digits) as a candidate
-# 2. describe it: text on the left, text on the right, its shape (digits -> 9)
+# 2. describe it: text on the left, text on the right, its shape (digits -> 9),
+#    and the key right before it split into parts (payee_acc -> payee acc)
 # 3. logistic regression: NONE / PHONE / ACCOUNT
 # trains from scratch every run, nothing about the test keys is hardcoded
 #
@@ -32,15 +33,25 @@ def shape(chunk):
     return re.sub(r"[a-zA-Z]", "a", re.sub(r"\d", "9", chunk))
 
 
+def key_before(left):
+    # last word-ish thing before the number: "payee_acc=", "\"tel\": \"", "deposit into "
+    m = re.search(r"([a-z][a-z_/#.]*)[^a-z]*$", left)
+    return m.group(1) if m else ""
+
+
 def describe(text, start, end):
     chunk = text[start:end]
     digits = re.sub(r"\D", "", chunk)
+    left = text[max(0, start - 40):start].lower()
+    key = key_before(left)
     return {
-        "left": text[max(0, start - 40):start].lower(),
+        "left": left,
         "right": text[end:end + 20].lower(),
         "form": shape(chunk),
         "tokens": f"nd{len(digits)} first{digits[0]} plus{int(chunk.startswith('+'))} "
                   f"groups{len(re.split(r'[ .-]', chunk))}",
+        "key": key,
+        "parts": " ".join(p for p in re.split(r"[^a-z]+", key) if p),
     }
 
 
@@ -58,20 +69,22 @@ def build_table(df, with_labels):
 
 
 class Featurizer:
-    # char n-grams on left/right context and on the shape, plus a few simple tokens
+    # char n-grams on left/right context and on the shape, plus a few simple tokens.
+    # the key gets its own n-grams so it isn't drowned out by whatever else is in the left 40 chars
     def __init__(self):
         self.left = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), min_df=2, sublinear_tf=True)
         self.right = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), min_df=2, sublinear_tf=True)
         self.form = TfidfVectorizer(analyzer="char", ngram_range=(1, 4), min_df=2)
         self.tokens = CountVectorizer(token_pattern=r"\S+", binary=True)
+        self.key = TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 4), min_df=1, sublinear_tf=True)
+        self.parts = CountVectorizer(token_pattern=r"\S+", binary=True)
+        self.cols = ["left", "right", "form", "tokens", "key", "parts"]
 
     def fit_transform(self, t):
-        return hstack([self.left.fit_transform(t["left"]), self.right.fit_transform(t["right"]),
-                       self.form.fit_transform(t["form"]), self.tokens.fit_transform(t["tokens"])]).tocsr()
+        return hstack([getattr(self, c).fit_transform(t[c]) for c in self.cols]).tocsr()
 
     def transform(self, t):
-        return hstack([self.left.transform(t["left"]), self.right.transform(t["right"]),
-                       self.form.transform(t["form"]), self.tokens.transform(t["tokens"])]).tocsr()
+        return hstack([getattr(self, c).transform(t[c]) for c in self.cols]).tocsr()
 
 
 if __name__ == "__main__":
