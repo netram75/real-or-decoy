@@ -6,6 +6,8 @@ Find the real phone and bank account numbers in messy server logs, and ignore th
 
 I built this as a small ML challenge: synthetic data generator, public/private split, grader, a shortcut baseline, a reference solution and rubrics.
 
+Also on Kaggle: the [dataset](https://www.kaggle.com/datasets/netramfaran/real-or-decoy-pii-lookalikes) and a [notebook](https://www.kaggle.com/code/netramfaran/real-or-decoy-baseline-vs-context-model) that goes through the baseline, the context model and what each feature adds.
+
 ## The task
 
 Each row is one log line. Some lines have real identifiers:
